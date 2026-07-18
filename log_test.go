@@ -24,6 +24,6 @@ func TestLogPayload(t *testing.T) {
 }
 
 type LogParams struct {
-	Name1 string `name:"name1"`
-	Name2 bool   `name:"name2"`
+	Name1 string
+	Name2 bool
 }

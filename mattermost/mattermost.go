@@ -9,32 +9,67 @@ package mattermost
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"net/http"
 
 	"github.com/mattermost/mattermost/server/public/model"
+	"github.com/tdrn-org/go-notify"
 )
 
 type Config interface {
-	ServerURL() string
-	BotToken() string
-	ChannelID() string
+	GetServerURL() (string, error)
+	GetToken() (string, error)
+	GetChannelID() (string, error)
+}
+
+type StaticConfig struct {
+	ServerURL string
+	Token     string
+	ChannelID string
+}
+
+func (c *StaticConfig) GetServerURL() (string, error) {
+	return c.ServerURL, nil
+}
+
+func (c *StaticConfig) GetToken() (string, error) {
+	return c.Token, nil
+}
+
+func (c *StaticConfig) GetChannelID() (string, error) {
+	return c.ChannelID, nil
 }
 
 type PayloadFactory struct {
 	client    *model.Client4
 	channelID string
+	logger    *slog.Logger
 }
 
-func NewPayloadFactory(config Config) *PayloadFactory {
-	client := model.NewAPIv4Client(config.ServerURL())
-	client.SetToken(config.BotToken())
+func NewPayloadFactory(config Config) (*PayloadFactory, error) {
+	serverURL, err := config.GetServerURL()
+	if err != nil {
+		return nil, err
+	}
+	token, err := config.GetToken()
+	if err != nil {
+		return nil, err
+	}
+	channelID, err := config.GetChannelID()
+	if err != nil {
+		return nil, err
+	}
+	client := model.NewAPIv4Client(serverURL)
+	client.SetToken(token)
 	payloadFactory := &PayloadFactory{
 		client:    client,
-		channelID: config.ChannelID(),
+		channelID: channelID,
+		logger:    slog.With(slog.String("transport", "Mattermost"), slog.String("server", serverURL)),
 	}
-	return payloadFactory
+	return payloadFactory, nil
 }
 
-func (f *PayloadFactory) CreatePayload(post *Post) *Payload {
+func (f *PayloadFactory) NewPayload(post *Post) *Payload {
 	payload := &Payload{
 		factory: f,
 		post:    post,
@@ -52,13 +87,22 @@ type Payload struct {
 }
 
 func (p *Payload) Send(ctx context.Context, params any) error {
+	message, err := notify.ExecuteTextTemplate(p.post.Message, params)
+	if err != nil {
+		return fmt.Errorf("failed to prepare Mattermost message (cause: %w)", err)
+	}
 	post := &model.Post{
 		ChannelId: p.factory.channelID,
-		Message:   p.post.Message,
+		Message:   message,
 	}
-	_, _, err := p.factory.client.CreatePost(ctx, post)
+	p.factory.logger.Info("creating Mattermost post...")
+	createdPost, response, err := p.factory.client.CreatePost(ctx, post)
 	if err != nil {
-		return fmt.Errorf("failed to send mattermost notification (cause: %w)", err)
+		return fmt.Errorf("failed to send Mattermost post (cause: %w)", err)
 	}
+	if response.StatusCode != http.StatusCreated {
+		return fmt.Errorf("failed to create Mattermost post (status code: %d)", response.StatusCode)
+	}
+	p.factory.logger.Debug("Mattermost post created", slog.String("id", createdPost.Id))
 	return nil
 }
