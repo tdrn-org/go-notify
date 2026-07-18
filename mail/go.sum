@@ -1,0 +1,8 @@
+github.com/go-openapi/testify v0.0.0-20251001202347-e909893202bd h1:+xqXbJEPxWM3YMAJ7yKV2FyqC/V/Dn8XggLC4tsMBXo=
+github.com/go-openapi/testify v0.0.0-20251001202347-e909893202bd/go.mod h1:Eo7DE2AKidl1U1diMDA05WiNks99vsR7HUun6G6Vob4=
+github.com/wneessen/go-mail v0.8.1 h1:tVcncj02/QySVFw3zr/kXOzZcuFQqBNT6K+Rbgm/pcM=
+github.com/wneessen/go-mail v0.8.1/go.mod h1:dWZ61zadzCIyvB4y1/YzC5O7MrbbzBfPkARmbosdf8w=
+golang.org/x/crypto v0.54.0 h1:YLIA59K4fiNzHzjnZt2tUJQjQtUWfWbeHBqKtk3eScw=
+golang.org/x/crypto v0.54.0/go.mod h1:KWL8ny2AZdGR2cWmzeHrp2azQPGogOv+HeQaVEXC2dk=
+golang.org/x/text v0.40.0 h1:Ub2Z6/xjgF1WrYQz2nuITOEegKFtiIy+rieRJ5lHZKs=
+golang.org/x/text v0.40.0/go.mod h1:hpnzDAfGV753zIKo+wk3u1bVKCGPbrnF7+7LBF/UHVY=
