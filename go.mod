@@ -5,7 +5,6 @@ go 1.26.3
 require (
 	github.com/go-openapi/testify v0.0.0-20251001202347-e909893202bd
 	github.com/mattermost/mattermost/server/public v0.4.3
-	github.com/mocktools/go-smtp-mock/v2 v2.5.4
 	github.com/tdrn-org/go-pool v0.0.2
 	github.com/wneessen/go-mail v0.8.1
 )

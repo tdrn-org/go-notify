@@ -92,7 +92,7 @@ func DecodeParams(params any) ([]NamedValue, error) {
 	structValue := paramsValue.Elem()
 	structType := structValue.Type()
 	numField := structValue.NumField()
-	namedValues := make([]NamedValue, numField)
+	namedValues := make([]NamedValue, 0, numField)
 	for i := range numField {
 		field := structType.Field(i)
 		namedValues = append(namedValues, NamedValue{Name: field.Name, Value: structValue.Field(i)})
