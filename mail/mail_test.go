@@ -21,7 +21,7 @@ func TestMail(t *testing.T) {
 	factory, err := mail.NewPayloadFactory(config)
 	require.NoError(t, err)
 	body := "Hello world from {{.Testname}}!"
-	payload := factory.NewPlainPayload(body)
+	payload := factory.NewPlainPayload("", "", t.Name(), body)
 	params := &Params{
 		Testname: t.Name(),
 	}

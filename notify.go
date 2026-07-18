@@ -4,6 +4,8 @@
 // This software may be modified and distributed under the terms
 // of the MIT license. See the LICENSE file for details.
 
+// Package notify provides a generic interface to send user notifications.
+// The actual transport behind (mail, webhook) can be plugged in as needed.
 package notify
 
 import (
@@ -17,12 +19,17 @@ import (
 	texttemplate "text/template"
 )
 
+// Payload represents a single notification including content and transport
+// specific attributes.
 type Payload interface {
+	// Send sends the Payload after applying the given params object.
 	Send(ctx context.Context, params any) error
 }
 
+// Payloads represents an array of [Payload] instances.
 type Payloads []Payload
 
+// Send invokes [Payload.Send] for all given [Payload] instances.
 func (payloads Payloads) Send(ctx context.Context, params any) error {
 	sendErrs := make([]error, 0, len(payloads))
 	for _, payload := range payloads {
@@ -34,11 +41,15 @@ func (payloads Payloads) Send(ctx context.Context, params any) error {
 	return errors.Join(sendErrs...)
 }
 
+// PayloadRegistry represents a registry of named [Payloads] and by this
+// a single location to store and access the notifications of an application.
 type PayloadRegistry struct {
 	payloads map[string][]Payload
 	mutex    sync.RWMutex
 }
 
+// Add adds a the given [Payload] instance using the given name. Multiple
+// payloads can be defined for a single name.
 func (r *PayloadRegistry) Add(name string, payload Payload) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -51,6 +62,7 @@ func (r *PayloadRegistry) Add(name string, payload Payload) {
 	r.payloads[name] = namedPayloads
 }
 
+// Get gets the [Payload] instances defined for the given name.
 func (r *PayloadRegistry) Get(name string) Payloads {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
@@ -61,15 +73,14 @@ func (r *PayloadRegistry) Get(name string) Payloads {
 	return payloads
 }
 
-type NamedPayloadFactory interface {
-	Create(name string) (Payload, error)
-}
-
+// NamedValue represents a named value pair as found in a parameter object.
 type NamedValue struct {
 	Name  string
 	Value any
 }
 
+// DecodeParams decodes a struct object to the contained [NamedValue] pairs.
+// If the params object is nil, an empty array is returned.
 func DecodeParams(params any) ([]NamedValue, error) {
 	if params == nil {
 		return []NamedValue{}, nil
@@ -89,6 +100,8 @@ func DecodeParams(params any) ([]NamedValue, error) {
 	return namedValues, nil
 }
 
+// ExecuteTextTemplate invokes [texttemplat.Execute] using the given template text
+// and parameter object.
 func ExecuteTextTemplate(text string, params any) (string, error) {
 	if params == nil {
 		return text, nil
@@ -105,6 +118,8 @@ func ExecuteTextTemplate(text string, params any) (string, error) {
 	return buffer.String(), nil
 }
 
+// ExecuteHTMLTemplate invokes [htmltemplat.Execute] using the given template text
+// and parameter object.
 func ExecuteHTMLTemplate(html string, params any) (string, error) {
 	if params == nil {
 		return html, nil

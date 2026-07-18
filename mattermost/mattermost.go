@@ -19,7 +19,7 @@ import (
 type Config interface {
 	GetServerURL() (string, error)
 	GetToken() (string, error)
-	GetChannelID() (string, error)
+	GetChannelID(client *model.Client4) (string, error)
 }
 
 type StaticConfig struct {
@@ -36,7 +36,7 @@ func (c *StaticConfig) GetToken() (string, error) {
 	return c.Token, nil
 }
 
-func (c *StaticConfig) GetChannelID() (string, error) {
+func (c *StaticConfig) GetChannelID(_ *model.Client4) (string, error) {
 	return c.ChannelID, nil
 }
 
@@ -55,12 +55,12 @@ func NewPayloadFactory(config Config) (*PayloadFactory, error) {
 	if err != nil {
 		return nil, err
 	}
-	channelID, err := config.GetChannelID()
+	client := model.NewAPIv4Client(serverURL)
+	client.SetToken(token)
+	channelID, err := config.GetChannelID(client)
 	if err != nil {
 		return nil, err
 	}
-	client := model.NewAPIv4Client(serverURL)
-	client.SetToken(token)
 	payloadFactory := &PayloadFactory{
 		client:    client,
 		channelID: channelID,
