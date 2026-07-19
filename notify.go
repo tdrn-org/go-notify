@@ -23,14 +23,14 @@ import (
 // specific attributes.
 type Payload[T any] interface {
 	// Send sends the Payload after applying the given params object.
-	Send(ctx context.Context, params T) error
+	Send(ctx context.Context, params any) error
 }
 
 // Payloads represents an array of [Payload] instances.
 type Payloads[T any] []Payload[T]
 
 // Send invokes [Payload.Send] for all given [Payload] instances.
-func (payloads Payloads[T]) Send(ctx context.Context, params T) error {
+func (payloads Payloads[T]) Send(ctx context.Context, params any) error {
 	sendErrs := make([]error, 0, len(payloads))
 	for _, payload := range payloads {
 		sendErr := payload.Send(ctx, params)

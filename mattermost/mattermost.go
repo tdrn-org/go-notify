@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"reflect"
 
 	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/tdrn-org/go-notify"
@@ -82,8 +83,12 @@ type Payload[T any] struct {
 	message string
 }
 
-func (p *Payload[T]) Send(ctx context.Context, params T) error {
-	channelID, err := p.factory.channelResolver.ResolveChannelID(ctx, p.factory.client, params)
+func (p *Payload[T]) Send(ctx context.Context, params any) error {
+	mattermostParams, ok := params.(T)
+	if !ok {
+		return fmt.Errorf("unexpected params type: %s", reflect.TypeOf(params))
+	}
+	channelID, err := p.factory.channelResolver.ResolveChannelID(ctx, p.factory.client, mattermostParams)
 	if err != nil {
 		return fmt.Errorf("failed to resolve Mattermost channel (cause: %w)", err)
 	}

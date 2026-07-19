@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net"
 	stdmail "net/mail"
+	"reflect"
 	"strconv"
 
 	"github.com/tdrn-org/go-notify"
@@ -189,8 +190,12 @@ type Payload[T any] struct {
 	body        string
 }
 
-func (p *Payload[T]) Send(ctx context.Context, params T) error {
-	message, err := p.prepareMessage(ctx, params)
+func (p *Payload[T]) Send(ctx context.Context, params any) error {
+	mailParams, ok := params.(T)
+	if !ok {
+		return fmt.Errorf("unexpected params type: %s", reflect.TypeOf(params))
+	}
+	message, err := p.prepareMessage(ctx, mailParams)
 	if err != nil {
 		return err
 	}
