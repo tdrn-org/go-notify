@@ -21,16 +21,16 @@ import (
 
 // Payload represents a single notification including content and transport
 // specific attributes.
-type Payload interface {
+type Payload[T any] interface {
 	// Send sends the Payload after applying the given params object.
-	Send(ctx context.Context, params any) error
+	Send(ctx context.Context, params T) error
 }
 
 // Payloads represents an array of [Payload] instances.
-type Payloads []Payload
+type Payloads[T any] []Payload[T]
 
 // Send invokes [Payload.Send] for all given [Payload] instances.
-func (payloads Payloads) Send(ctx context.Context, params any) error {
+func (payloads Payloads[T]) Send(ctx context.Context, params T) error {
 	sendErrs := make([]error, 0, len(payloads))
 	for _, payload := range payloads {
 		sendErr := payload.Send(ctx, params)
@@ -43,19 +43,19 @@ func (payloads Payloads) Send(ctx context.Context, params any) error {
 
 // PayloadRegistry represents a registry of named [Payloads] and by this
 // a single location to store and access the notifications of an application.
-type PayloadRegistry struct {
-	payloads map[string][]Payload
+type PayloadRegistry[T any] struct {
+	payloads map[string][]Payload[T]
 	mutex    sync.RWMutex
 }
 
 // Add adds a the given [Payload] instance using the given name. Multiple
 // payloads can be defined for a single name.
-func (r *PayloadRegistry) Add(name string, payload Payload) {
+func (r *PayloadRegistry[T]) Add(name string, payload Payload[T]) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
 	if r.payloads == nil {
-		r.payloads = make(map[string][]Payload)
+		r.payloads = make(map[string][]Payload[T])
 	}
 	namedPayloads := r.payloads[name]
 	namedPayloads = append(namedPayloads, payload)
@@ -63,12 +63,12 @@ func (r *PayloadRegistry) Add(name string, payload Payload) {
 }
 
 // Get gets the [Payload] instances defined for the given name.
-func (r *PayloadRegistry) Get(name string) Payloads {
+func (r *PayloadRegistry[T]) Get(name string) Payloads[T] {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
 
 	namedPayloads := r.payloads[name]
-	payloads := make(Payloads, 0, len(namedPayloads))
+	payloads := make(Payloads[T], 0, len(namedPayloads))
 	payloads = append(payloads, namedPayloads...)
 	return payloads
 }

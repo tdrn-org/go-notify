@@ -20,10 +20,8 @@ func TestMattermost(t *testing.T) {
 	}
 	factory, err := mattermost.NewPayloadFactory(config)
 	require.NoError(t, err)
-	post := &mattermost.Post{
-		Message: "Hello world from {{.Testname}}!",
-	}
-	payload := factory.NewPayload(post)
+	message := "Hello world from {{.Testname}}!"
+	payload := factory.NewPayload(message)
 	params := &Params{
 		Testname: t.Name(),
 	}
@@ -35,6 +33,6 @@ type Params struct {
 	Testname string
 }
 
-func newMattermostConfig() mattermost.Config {
+func newMattermostConfig() mattermost.Config[*Params] {
 	return nil
 }

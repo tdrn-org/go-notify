@@ -14,7 +14,7 @@ import (
 )
 
 func TestPayloadRegistry(t *testing.T) {
-	payloads := &notify.PayloadRegistry{}
+	payloads := &notify.PayloadRegistry[any]{}
 	payloads.Add("payload1", &notify.LogPayload{Msg: "payload1#1"})
 	payloads.Add("payload2", &notify.LogPayload{Msg: "payload2#1"})
 	payloads.Add("payload2", &notify.LogPayload{Msg: "payload2#2"})

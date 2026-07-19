@@ -16,10 +16,14 @@ import (
 	"github.com/tdrn-org/go-notify"
 )
 
-type Config interface {
+type ChannelResolver[T any] interface {
+	ResolveChannelID(ctx context.Context, client *model.Client4, params T) (string, error)
+}
+
+type Config[T any] interface {
 	GetServerURL() (string, error)
 	GetToken() (string, error)
-	GetChannelID(client *model.Client4) (string, error)
+	ChannelResolver[T]
 }
 
 type StaticConfig struct {
@@ -36,17 +40,17 @@ func (c *StaticConfig) GetToken() (string, error) {
 	return c.Token, nil
 }
 
-func (c *StaticConfig) GetChannelID(_ *model.Client4) (string, error) {
+func (c *StaticConfig) ResolveChannelID(_ context.Context, _ *model.Client4, _ any) (string, error) {
 	return c.ChannelID, nil
 }
 
-type PayloadFactory struct {
-	client    *model.Client4
-	channelID string
-	logger    *slog.Logger
+type PayloadFactory[T any] struct {
+	client          *model.Client4
+	channelResolver ChannelResolver[T]
+	logger          *slog.Logger
 }
 
-func NewPayloadFactory(config Config) (*PayloadFactory, error) {
+func NewPayloadFactory[T any](config Config[T]) (*PayloadFactory[T], error) {
 	serverURL, err := config.GetServerURL()
 	if err != nil {
 		return nil, err
@@ -57,42 +61,38 @@ func NewPayloadFactory(config Config) (*PayloadFactory, error) {
 	}
 	client := model.NewAPIv4Client(serverURL)
 	client.SetToken(token)
-	channelID, err := config.GetChannelID(client)
-	if err != nil {
-		return nil, err
-	}
-	payloadFactory := &PayloadFactory{
-		client:    client,
-		channelID: channelID,
-		logger:    slog.With(slog.String("transport", "Mattermost"), slog.String("server", serverURL)),
+	payloadFactory := &PayloadFactory[T]{
+		client:          client,
+		channelResolver: config,
+		logger:          slog.With(slog.String("transport", "Mattermost"), slog.String("server", serverURL)),
 	}
 	return payloadFactory, nil
 }
 
-func (f *PayloadFactory) NewPayload(post *Post) *Payload {
-	payload := &Payload{
+func (f *PayloadFactory[T]) NewPayload(message string) *Payload[T] {
+	payload := &Payload[T]{
 		factory: f,
-		post:    post,
+		message: message,
 	}
 	return payload
 }
 
-type Post struct {
-	Message string
+type Payload[T any] struct {
+	factory *PayloadFactory[T]
+	message string
 }
 
-type Payload struct {
-	factory *PayloadFactory
-	post    *Post
-}
-
-func (p *Payload) Send(ctx context.Context, params any) error {
-	message, err := notify.ExecuteTextTemplate(p.post.Message, params)
+func (p *Payload[T]) Send(ctx context.Context, params T) error {
+	channelID, err := p.factory.channelResolver.ResolveChannelID(ctx, p.factory.client, params)
+	if err != nil {
+		return fmt.Errorf("failed to resolve Mattermost channel (cause: %w)", err)
+	}
+	message, err := notify.ExecuteTextTemplate(p.message, params)
 	if err != nil {
 		return fmt.Errorf("failed to prepare Mattermost message (cause: %w)", err)
 	}
 	post := &model.Post{
-		ChannelId: p.factory.channelID,
+		ChannelId: channelID,
 		Message:   message,
 	}
 	p.factory.logger.Info("creating Mattermost post...")

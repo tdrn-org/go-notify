@@ -21,7 +21,7 @@ func TestMail(t *testing.T) {
 	factory, err := mail.NewPayloadFactory(config)
 	require.NoError(t, err)
 	body := "Hello world from {{.Testname}}!"
-	payload := factory.NewPlainPayload("", "", t.Name(), body)
+	payload := factory.NewPlainPayload(body)
 	params := &Params{
 		Testname: t.Name(),
 	}
@@ -37,6 +37,6 @@ type Params struct {
 	Testname string
 }
 
-func newMailConfig() mail.Config {
+func newMailConfig() mail.Config[*Params] {
 	return nil
 }

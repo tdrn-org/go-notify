@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	stdmail "net/mail"
 	"strconv"
 
 	"github.com/tdrn-org/go-notify"
@@ -18,12 +19,22 @@ import (
 	"github.com/wneessen/go-mail"
 )
 
-type Config interface {
+type RecipientsResolver[T any] interface {
+	ResolveRecipients(ctx context.Context, params T) ([]*stdmail.Address, error)
+}
+
+type SubjectResolver[T any] interface {
+	ResolveSubject(ctx context.Context, params T) (string, error)
+}
+
+type Config[T any] interface {
 	GetServerAddress() (string, int, error)
 	GetUser() (string, error)
 	GetPassword() (string, error)
 	GetFromAddress() (string, error)
 	GetFromName() (string, error)
+	RecipientsResolver[T]
+	SubjectResolver[T]
 }
 
 type StaticConfig struct {
@@ -32,6 +43,9 @@ type StaticConfig struct {
 	Password      string
 	FromAddress   string
 	FromName      string
+	ToAddress     string
+	ToName        string
+	Subject       string
 }
 
 func (c *StaticConfig) GetServerAddress() (string, int, error) {
@@ -64,14 +78,32 @@ func (c *StaticConfig) GetFromName() (string, error) {
 	return c.FromName, nil
 }
 
-type PayloadFactory struct {
-	clientPool  *pool.Resources[*mail.Client]
-	fromAddress string
-	fromName    string
-	logger      *slog.Logger
+func (c *StaticConfig) ResolveRecipients(_ context.Context, _ any) ([]*stdmail.Address, error) {
+	address := c.ToAddress
+	if c.ToName != "" {
+		address = fmt.Sprintf("%s <%s>", c.ToName, c.ToName)
+	}
+	resolved, err := stdmail.ParseAddress(address)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse Mail address '%s' (cause: %w)", address, err)
+	}
+	return []*stdmail.Address{resolved}, nil
 }
 
-func NewPayloadFactory(config Config) (*PayloadFactory, error) {
+func (c *StaticConfig) ResolveSubject(_ context.Context, _ any) (string, error) {
+	return c.Subject, nil
+}
+
+type PayloadFactory[T any] struct {
+	clientPool         *pool.Resources[*mail.Client]
+	fromAddress        string
+	fromName           string
+	recipientsResolver RecipientsResolver[T]
+	subjectResolver    SubjectResolver[T]
+	logger             *slog.Logger
+}
+
+func NewPayloadFactory[T any](config Config[T]) (*PayloadFactory[T], error) {
 	host, port, err := config.GetServerAddress()
 	if err != nil {
 		return nil, err
@@ -98,32 +130,31 @@ func NewPayloadFactory(config Config) (*PayloadFactory, error) {
 	if err != nil {
 		return nil, err
 	}
-	factory := &PayloadFactory{
-		clientPool:  pool.NewResourcePool("notify", pool.ResourceFactory[*mail.Client](mailClientFactory)),
-		fromAddress: fromAddress,
-		fromName:    fromName,
-		logger:      slog.With(slog.String("transport", "Mail")),
+	factory := &PayloadFactory[T]{
+		clientPool:         pool.NewResourcePool("notify", pool.ResourceFactory[*mail.Client](mailClientFactory)),
+		fromAddress:        fromAddress,
+		fromName:           fromName,
+		recipientsResolver: config,
+		subjectResolver:    config,
+		logger:             slog.With(slog.String("transport", "Mail")),
 	}
 	return factory, nil
 }
 
-func (f *PayloadFactory) NewPlainPayload(toAddress, toName, subject, body string) *Payload {
-	payload := &Payload{
+func (f *PayloadFactory[T]) NewPlainPayload(body string) *Payload[T] {
+	payload := &Payload[T]{
 		factory:     f,
-		toAddress:   toAddress,
-		toName:      toName,
-		subject:     subject,
 		contentType: mail.TypeTextPlain,
 		body:        body,
 	}
 	return payload
 }
 
-func (f *PayloadFactory) Shutdown(ctx context.Context) error {
+func (f *PayloadFactory[T]) Shutdown(ctx context.Context) error {
 	return f.clientPool.Shutdown(ctx)
 }
 
-func (f *PayloadFactory) Close() error {
+func (f *PayloadFactory[T]) Close() error {
 	return f.clientPool.Close()
 }
 
@@ -152,17 +183,14 @@ func (f *mailClientFactory) New(ctx context.Context) (*mail.Client, error) {
 	return client, nil
 }
 
-type Payload struct {
-	factory     *PayloadFactory
-	toAddress   string
-	toName      string
-	subject     string
+type Payload[T any] struct {
+	factory     *PayloadFactory[T]
 	contentType mail.ContentType
 	body        string
 }
 
-func (p *Payload) Send(ctx context.Context, params any) error {
-	message, err := p.prepareMessage(params)
+func (p *Payload[T]) Send(ctx context.Context, params T) error {
+	message, err := p.prepareMessage(ctx, params)
 	if err != nil {
 		return err
 	}
@@ -171,20 +199,20 @@ func (p *Payload) Send(ctx context.Context, params any) error {
 		return err
 	}
 	defer client.Release()
-	return p.sendMessage(client.Get(), message)
+	return p.sendMessage(ctx, client.Get(), message)
 }
 
-func (p *Payload) sendMessage(client *mail.Client, message *mail.Msg) error {
+func (p *Payload[T]) sendMessage(ctx context.Context, client *mail.Client, message *mail.Msg) error {
 	logger := p.factory.logger.With(slog.Any("to", message.GetToString()))
 	logger.Info("sending Mail message...")
-	err := client.DialAndSend(message)
+	err := client.DialAndSendWithContext(ctx, message)
 	if err != nil {
 		logger.Warn("failed to send Mail message; retry after reset (cause: %w)", slog.Any("err", err))
 		err := client.Reset()
 		if err != nil {
 			return fmt.Errorf("failed to reset Mail for re-seend attempt (cause: %w)", err)
 		}
-		err = client.DialAndSend(message)
+		err = client.DialAndSendWithContext(ctx, message)
 		if err != nil {
 			return fmt.Errorf("failed to send Mail (cause: %w)", err)
 		}
@@ -193,17 +221,20 @@ func (p *Payload) sendMessage(client *mail.Client, message *mail.Msg) error {
 	return nil
 }
 
-func (p *Payload) prepareMessage(params any) (*mail.Msg, error) {
+func (p *Payload[T]) prepareMessage(ctx context.Context, params T) (*mail.Msg, error) {
 	message := mail.NewMsg()
-	err := p.prepareMessageFrom(message)
+	err := p.prepareMessageFrom(ctx, message, params)
 	if err != nil {
 		return nil, err
 	}
-	err = p.prepareMessageTo(message)
+	err = p.prepareMessageTo(ctx, message, params)
 	if err != nil {
 		return nil, err
 	}
-	message.Subject(p.subject)
+	err = p.prepareMessageSubject(ctx, message, params)
+	if err != nil {
+		return nil, err
+	}
 	body := p.body
 	switch p.contentType {
 	case mail.TypeTextPlain:
@@ -220,7 +251,7 @@ func (p *Payload) prepareMessage(params any) (*mail.Msg, error) {
 	return message, nil
 }
 
-func (p *Payload) prepareMessageFrom(message *mail.Msg) error {
+func (p *Payload[T]) prepareMessageFrom(_ context.Context, message *mail.Msg, _ T) error {
 	var err error
 	if p.factory.fromName == "" {
 		err = message.From(p.factory.fromAddress)
@@ -233,15 +264,22 @@ func (p *Payload) prepareMessageFrom(message *mail.Msg) error {
 	return nil
 }
 
-func (p *Payload) prepareMessageTo(message *mail.Msg) error {
-	var err error
-	if p.toName == "" {
-		err = message.AddTo(p.toAddress)
-	} else {
-		err = message.AddToFormat(p.toName, p.toAddress)
-	}
+func (p *Payload[T]) prepareMessageTo(ctx context.Context, message *mail.Msg, params T) error {
+	recipients, err := p.factory.recipientsResolver.ResolveRecipients(ctx, params)
 	if err != nil {
-		return fmt.Errorf("failed to set Mail to address (cause: %w)", err)
+		return err
 	}
+	for _, recipient := range recipients {
+		message.AddToMailAddress(recipient)
+	}
+	return nil
+}
+
+func (p *Payload[T]) prepareMessageSubject(ctx context.Context, message *mail.Msg, params T) error {
+	subject, err := p.factory.subjectResolver.ResolveSubject(ctx, params)
+	if err != nil {
+		return err
+	}
+	message.Subject(subject)
 	return nil
 }
