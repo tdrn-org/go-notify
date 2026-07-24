@@ -14,11 +14,25 @@ import (
 	stdmail "net/mail"
 	"reflect"
 	"strconv"
+	"time"
 
 	"github.com/tdrn-org/go-notify"
 	"github.com/tdrn-org/go-pool"
 	"github.com/wneessen/go-mail"
 )
+
+const DefaultKeepAliveTimeout time.Duration = 60 * time.Second
+
+type TLSMode string
+
+const (
+	TLSModeDefault  TLSMode = ""
+	TLSModeNone     TLSMode = "none"
+	TLSModeSSL      TLSMode = "ssl"
+	TLSModeStartTLS TLSMode = "starttls"
+)
+
+const DefaultTLSMode TLSMode = TLSModeStartTLS
 
 type RecipientsResolver[T any] interface {
 	ResolveRecipients(ctx context.Context, params T) ([]*stdmail.Address, error)
@@ -34,19 +48,25 @@ type Config[T any] interface {
 	GetPassword() (string, error)
 	GetFromAddress() (string, error)
 	GetFromName() (string, error)
+	GetKeepAliveTimeout() (time.Duration, error)
+	GetTLSMode() (TLSMode, error)
+	GetEHLOIdentity() (string, error)
 	RecipientsResolver[T]
 	SubjectResolver[T]
 }
 
 type StaticConfig struct {
-	ServerAddress string
-	User          string
-	Password      string
-	FromAddress   string
-	FromName      string
-	ToAddress     string
-	ToName        string
-	Subject       string
+	ServerAddress    string
+	User             string
+	Password         string
+	FromAddress      string
+	FromName         string
+	KeepAliveTimeout time.Duration
+	TLSMode          TLSMode
+	EHLOIdentity     string
+	ToAddress        string
+	ToName           string
+	Subject          string
 }
 
 func (c *StaticConfig) GetServerAddress() (string, int, error) {
@@ -77,6 +97,18 @@ func (c *StaticConfig) GetFromAddress() (string, error) {
 
 func (c *StaticConfig) GetFromName() (string, error) {
 	return c.FromName, nil
+}
+
+func (c *StaticConfig) GetKeepAliveTimeout() (time.Duration, error) {
+	return c.KeepAliveTimeout, nil
+}
+
+func (c *StaticConfig) GetTLSMode() (TLSMode, error) {
+	return c.TLSMode, nil
+}
+
+func (c *StaticConfig) GetEHLOIdentity() (string, error) {
+	return c.EHLOIdentity, nil
 }
 
 func (c *StaticConfig) ResolveRecipients(_ context.Context, _ any) ([]*stdmail.Address, error) {
@@ -117,11 +149,25 @@ func NewPayloadFactory[T any](config Config[T]) (*PayloadFactory[T], error) {
 	if err != nil {
 		return nil, err
 	}
+	keepAliveTimeout, err := config.GetKeepAliveTimeout()
+	if err != nil {
+		return nil, err
+	}
+	tlsMode, err := config.GetTLSMode()
+	if err != nil {
+		return nil, err
+	}
+	ehloIdentity, err := config.GetEHLOIdentity()
+	if err != nil {
+		return nil, err
+	}
 	mailClientFactory := &mailClientFactory{
-		Host:     host,
-		Port:     port,
-		User:     user,
-		Password: password,
+		Host:         host,
+		Port:         port,
+		User:         user,
+		Password:     password,
+		TLSMode:      tlsMode,
+		EHLOIdentity: ehloIdentity,
 	}
 	fromAddress, err := config.GetFromAddress()
 	if err != nil {
@@ -139,6 +185,7 @@ func NewPayloadFactory[T any](config Config[T]) (*PayloadFactory[T], error) {
 		subjectResolver:    config,
 		logger:             slog.With(slog.String("transport", "Mail")),
 	}
+	factory.clientPool.SetResourceMaxLifetime(keepAliveTimeout)
 	return factory, nil
 }
 
@@ -160,10 +207,12 @@ func (f *PayloadFactory[T]) Close() error {
 }
 
 type mailClientFactory struct {
-	Host     string
-	Port     int
-	User     string
-	Password string
+	Host         string
+	Port         int
+	User         string
+	Password     string
+	TLSMode      TLSMode
+	EHLOIdentity string
 }
 
 func (f *mailClientFactory) New(ctx context.Context) (*mail.Client, error) {
@@ -176,6 +225,17 @@ func (f *mailClientFactory) New(ctx context.Context) (*mail.Client, error) {
 	}
 	if f.Port != 0 {
 		options = append(options, mail.WithPort(f.Port))
+	}
+	switch f.TLSMode {
+	case TLSModeNone:
+		options = append(options, mail.WithTLSPortPolicy(mail.NoTLS))
+	case TLSModeSSL:
+		options = append(options, mail.WithSSL())
+	case TLSModeStartTLS:
+		options = append(options, mail.WithTLSPortPolicy(mail.TLSMandatory))
+	}
+	if f.EHLOIdentity != "" {
+		options = append(options, mail.WithHELO(f.EHLOIdentity))
 	}
 	client, err := mail.NewClient(f.Host, options...)
 	if err != nil {
