@@ -198,6 +198,15 @@ func (f *PayloadFactory[T]) NewPlainPayload(body string) *Payload[T] {
 	return payload
 }
 
+func (f *PayloadFactory[T]) NewHTMLPayload(body string) *Payload[T] {
+	payload := &Payload[T]{
+		factory:     f,
+		contentType: mail.TypeTextHTML,
+		body:        body,
+	}
+	return payload
+}
+
 func (f *PayloadFactory[T]) Shutdown(ctx context.Context) error {
 	return f.clientPool.Shutdown(ctx)
 }
