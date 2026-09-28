@@ -2,6 +2,8 @@ module github.com/tdrn-org/go-notify
 
 go 1.26.7
 
+toolchain go1.27.1
+
 require (
 	github.com/go-openapi/testify v0.0.0-20251001202347-e909893202bd
 	github.com/mattermost/mattermost/server/public v0.4.4
