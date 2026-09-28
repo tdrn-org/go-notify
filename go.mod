@@ -7,7 +7,7 @@ toolchain go1.27.1
 require (
 	github.com/go-openapi/testify v0.0.0-20251001202347-e909893202bd
 	github.com/mattermost/mattermost/server/public v0.4.4
-	github.com/tdrn-org/go-pool v0.0.3
+	github.com/tdrn-org/go-pool v0.0.5
 	github.com/wneessen/go-mail v0.8.1
 )
 
