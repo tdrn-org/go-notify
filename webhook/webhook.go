@@ -20,13 +20,13 @@ import (
 
 type Config interface {
 	GetClient() (*http.Client, error)
-	GetWebhookURL() (string, error)
+	GetWebhookURL() (*url.URL, error)
 	GetTimeout() (time.Duration, error)
 }
 
 type StaticConfig struct {
 	Client     *http.Client
-	WebhookURL string
+	WebhookURL *url.URL
 	Timeout    time.Duration
 }
 
@@ -34,7 +34,7 @@ func (c *StaticConfig) GetClient() (*http.Client, error) {
 	return c.Client, nil
 }
 
-func (c *StaticConfig) GetWebhookURL() (string, error) {
+func (c *StaticConfig) GetWebhookURL() (*url.URL, error) {
 	return c.WebhookURL, nil
 }
 
@@ -44,7 +44,7 @@ func (c *StaticConfig) GetTimeout() (time.Duration, error) {
 
 type PayloadFactory struct {
 	client     *http.Client
-	webhookURL string
+	webhookURL *url.URL
 	timeout    time.Duration
 	logger     *slog.Logger
 }
@@ -57,10 +57,6 @@ func NewPayloadFactory(config Config) (*PayloadFactory, error) {
 	webhookURL, err := config.GetWebhookURL()
 	if err != nil {
 		return nil, err
-	}
-	parsedWebhookURL, err := url.Parse(webhookURL)
-	if err != nil {
-		return nil, fmt.Errorf("invalid or empty Webhook URL (cause: %w)", err)
 	}
 	timeout, err := config.GetTimeout()
 	if err != nil {
@@ -75,7 +71,7 @@ func NewPayloadFactory(config Config) (*PayloadFactory, error) {
 		client:     client,
 		webhookURL: webhookURL,
 		timeout:    timeout,
-		logger:     slog.With(slog.String("transport", "Webhook"), slog.String("url", fmt.Sprintf("%s://%s", parsedWebhookURL.Scheme, parsedWebhookURL.Host))),
+		logger:     slog.With(slog.String("transport", "Webhook"), slog.String("url", fmt.Sprintf("%s://%s", webhookURL.Scheme, webhookURL.Host))),
 	}
 	return factory, nil
 }
@@ -108,7 +104,7 @@ func (p *Payload) Send(ctx context.Context, params any) error {
 	if err != nil {
 		return fmt.Errorf("failed to prepare Webhook body (cause: %w)", err)
 	}
-	req, err := http.NewRequest(http.MethodPost, p.factory.webhookURL, strings.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, p.factory.webhookURL.String(), strings.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("failed to create Webhook request (cause: %w)", err)
 	}
@@ -119,7 +115,7 @@ func (p *Payload) Send(ctx context.Context, params any) error {
 	p.factory.logger.Info("invoking Webhook...")
 	rsp, err := p.factory.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to process Webhook process (cause: %w)", err)
+		return fmt.Errorf("failed to process Webhook request (cause: %w)", err)
 	}
 	if rsp.StatusCode < 200 || 299 < rsp.StatusCode {
 		return fmt.Errorf("failed to invoke Webhook (status: %s)", rsp.Status)

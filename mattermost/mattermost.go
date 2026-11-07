@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"reflect"
 
 	"github.com/mattermost/mattermost/server/public/model"
@@ -22,18 +23,18 @@ type ChannelResolver[T any] interface {
 }
 
 type Config[T any] interface {
-	GetServerURL() (string, error)
+	GetServerURL() (*url.URL, error)
 	GetToken() (string, error)
 	ChannelResolver[T]
 }
 
 type StaticConfig struct {
-	ServerURL string
+	ServerURL *url.URL
 	Token     string
 	ChannelID string
 }
 
-func (c *StaticConfig) GetServerURL() (string, error) {
+func (c *StaticConfig) GetServerURL() (*url.URL, error) {
 	return c.ServerURL, nil
 }
 
@@ -60,12 +61,12 @@ func NewPayloadFactory[T any](config Config[T]) (*PayloadFactory[T], error) {
 	if err != nil {
 		return nil, err
 	}
-	client := model.NewAPIv4Client(serverURL)
+	client := model.NewAPIv4Client(serverURL.String())
 	client.SetToken(token)
 	payloadFactory := &PayloadFactory[T]{
 		client:          client,
 		channelResolver: config,
-		logger:          slog.With(slog.String("transport", "Mattermost"), slog.String("server", serverURL)),
+		logger:          slog.With(slog.String("transport", "Mattermost"), slog.String("server", serverURL.String())),
 	}
 	return payloadFactory, nil
 }
