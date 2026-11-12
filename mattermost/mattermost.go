@@ -18,14 +18,21 @@ import (
 	"github.com/tdrn-org/go-notify"
 )
 
+const Name string = "mattermost"
+
 type ChannelResolver[T any] interface {
 	ResolveChannelID(ctx context.Context, client *model.Client4, params T) (string, error)
+}
+
+type SendAuthorizer[T any] interface {
+	AuthorizeSend(ctx context.Context, client *model.Client4, channelID string, params T) (bool, error)
 }
 
 type Config[T any] interface {
 	GetServerURL() (*url.URL, error)
 	GetToken() (string, error)
 	ChannelResolver[T]
+	SendAuthorizer[T]
 }
 
 type StaticConfig struct {
@@ -49,6 +56,7 @@ func (c *StaticConfig) ResolveChannelID(_ context.Context, _ *model.Client4, _ a
 type PayloadFactory[T any] struct {
 	client          *model.Client4
 	channelResolver ChannelResolver[T]
+	sendFilter      SendAuthorizer[T]
 	logger          *slog.Logger
 }
 
@@ -66,7 +74,8 @@ func NewPayloadFactory[T any](config Config[T]) (*PayloadFactory[T], error) {
 	payloadFactory := &PayloadFactory[T]{
 		client:          client,
 		channelResolver: config,
-		logger:          slog.With(slog.String("transport", "Mattermost"), slog.String("server", serverURL.String())),
+		sendFilter:      config,
+		logger:          slog.With(slog.String("transport", Name), slog.String("server", serverURL.String())),
 	}
 	return payloadFactory, nil
 }
@@ -84,6 +93,10 @@ type Payload[T any] struct {
 	message string
 }
 
+func (p *Payload[T]) TransportName() string {
+	return Name
+}
+
 func (p *Payload[T]) Send(ctx context.Context, params any) error {
 	mattermostParams, ok := params.(T)
 	if !ok {
@@ -92,6 +105,13 @@ func (p *Payload[T]) Send(ctx context.Context, params any) error {
 	channelID, err := p.factory.channelResolver.ResolveChannelID(ctx, p.factory.client, mattermostParams)
 	if err != nil {
 		return fmt.Errorf("failed to resolve Mattermost channel (cause: %w)", err)
+	}
+	authorized, err := p.factory.sendFilter.AuthorizeSend(ctx, p.factory.client, channelID, mattermostParams)
+	if err != nil {
+		return fmt.Errorf("failed to filter Mattermost message (cause: %w)", err)
+	}
+	if !authorized {
+		return nil
 	}
 	message, err := notify.ExecuteTextTemplate(p.message, params)
 	if err != nil {
