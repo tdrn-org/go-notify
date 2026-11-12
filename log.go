@@ -11,10 +11,16 @@ import (
 	"log/slog"
 )
 
+const Name string = "log"
+
 type LogPayload struct {
 	Logger *slog.Logger
 	Level  slog.Level
 	Msg    string
+}
+
+func (p *LogPayload) TransportName() string {
+	return Name
 }
 
 func (p *LogPayload) Send(ctx context.Context, params any) error {

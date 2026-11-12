@@ -18,6 +18,8 @@ import (
 	"github.com/tdrn-org/go-notify"
 )
 
+const Name string = "webhook"
+
 type Config interface {
 	GetClient() (*http.Client, error)
 	GetWebhookURL() (*url.URL, error)
@@ -71,7 +73,7 @@ func NewPayloadFactory(config Config) (*PayloadFactory, error) {
 		client:     client,
 		webhookURL: webhookURL,
 		timeout:    timeout,
-		logger:     slog.With(slog.String("transport", "Webhook"), slog.String("url", fmt.Sprintf("%s://%s", webhookURL.Scheme, webhookURL.Host))),
+		logger:     slog.With(slog.String("transport", Name), slog.String("url", fmt.Sprintf("%s://%s", webhookURL.Scheme, webhookURL.Host))),
 	}
 	return factory, nil
 }
@@ -93,6 +95,10 @@ type Payload struct {
 	marshaler bodyMarshaler
 	body      any
 	headers   Headers
+}
+
+func (p *Payload) TransportName() string {
+	return Name
 }
 
 func (p *Payload) Send(ctx context.Context, params any) error {

@@ -21,6 +21,8 @@ import (
 	"github.com/wneessen/go-mail"
 )
 
+const Name string = "mail"
+
 const DefaultKeepAliveTimeout time.Duration = 60 * time.Second
 
 type TLSMode string
@@ -183,7 +185,7 @@ func NewPayloadFactory[T any](config Config[T]) (*PayloadFactory[T], error) {
 		fromName:           fromName,
 		recipientsResolver: config,
 		subjectResolver:    config,
-		logger:             slog.With(slog.String("transport", "Mail")),
+		logger:             slog.With(slog.String("transport", Name)),
 	}
 	factory.clientPool.SetResourceMaxLifetime(keepAliveTimeout)
 	return factory, nil
@@ -257,6 +259,10 @@ type Payload[T any] struct {
 	factory     *PayloadFactory[T]
 	contentType mail.ContentType
 	body        string
+}
+
+func (p *Payload[T]) TransportName() string {
+	return Name
 }
 
 func (p *Payload[T]) Send(ctx context.Context, params any) error {
